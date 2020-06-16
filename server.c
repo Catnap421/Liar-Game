@@ -19,6 +19,11 @@ static int uid = 10;
 
 static char* word;
 static char* liar_name; 
+static int liar_uid;
+static int game_status = 0; // 1이면 게임 중으로 다시 게임을 시작할 수 없다.
+static int vote_count = 0;
+static char vote[MAX_CLIENTS] = "\0";
+static char refresh[MAX_CLIENTS] = "\0";
 
 /* Client structure */
 typedef struct{
@@ -27,6 +32,11 @@ typedef struct{
 	int uid;
 	char name[32];
 } client_t;
+
+typedef struct{
+    char m_username[32];
+    char m_buffer[100];
+} MESSAGE;
 
 client_t *clients[MAX_CLIENTS];
 
@@ -154,14 +164,30 @@ void send_to_all_message(char * s){
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void send_to_self_message(char *s, int uid){
+	pthread_mutex_lock(&clients_mutex);
+
+	for(int i=0; i<MAX_CLIENTS; ++i){
+		if(clients[i]){
+			if(clients[i]->uid == uid){
+				if(write(clients[i]->sockfd, s, strlen(s)) < 0){
+					perror("ERROR: write to descriptor failed");
+					break;
+				}
+			}
+		}
+	}
+
+	pthread_mutex_unlock(&clients_mutex);
+}
+
 void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아야 하는가?
     //char buff_out[BUFFER_SZ];
 
-    sprintf(buff_out, "liar game start!!\n");
-    word = "target";
+    sprintf(buff_out, "\n\n>>>> Liar Game Start!! <<<\n");
+    vote_count = 0;
+    strcpy(vote, refresh);
     printf("%s", buff_out);
-    printf("The word: %s\n", word);
-    printf("uid: %d\n",cli->uid);
     send_to_all_message(buff_out);
 
     srand(time(NULL));
@@ -169,22 +195,21 @@ void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아
     while(cli_liar == NULL){
         cli_liar = clients[rand() % MAX_CLIENTS];
     }
-    // 한 명을 제외하고 모두에게 제시어(word)를 전달해야 한다
-    // clients[i] 인데 여기서 임의의 i값만 제거해서 하면 될듯?
-    // cli_count를 통해서 클라 수도 확인하고 있으니
+
+    liar_name = cli_liar->name;
+    liar_uid = cli_liar->uid;
+
+    word = "banana"; // 원래는 파일에서 읽어올 예정
+
+    sprintf(buff_out, ">>> The word is %s <<<\n", word);
+    printf("%s", buff_out);
+    printf("uid: %d, liar_uid: %d, liar_name: %s\n",cli->uid, liar_uid, liar_name);
+    
+    send_message(buff_out, liar_uid);
+
+
     // name이라는 전역변수를 만들긴 했는데, 서로 다른 쓰레드인데 접근 가능한 지 의문
     
-    //int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
-    //if(receive > 0){
-        // if(strstr(buff_out, word) != NULL){
-        //     word = NULL;
-        //     sprintf(buff_out, "Game Finished!!");
-        //     printf("%s", buff_out);
-        //     send_message(buff_out, cli->uid);
-        // }  
-         // 이 부분 같은 경우 : 라이어가 제시어를 맞추는 부분이기 때문에 나중에 추가
-    //}
-
 }
 
 /* Handle all communication with the client */
@@ -225,13 +250,57 @@ void *handle_client(void *arg){
                 ptr_word_slice = strtok(NULL, ":");
 
                 trim(ptr_word_slice, NULL); // trim 처리 중요
-
-                if(strcmp(ptr_word_slice, "game start") == 0){
-                    start_game(cli, buff_out);
-                } else if(strcmp(ptr_word_slice, "what is word") == 0){
-                    sprintf(buff_out,"The word is %s\n", word);
-                    printf("%s", buff_out);
-                    send_to_all_message(buff_out);
+                /*
+                현재의 방식보단 '/'키워드를 만들어서 게임을 시작하고 게임을 끝내고 liar, word를 파악할 수 있도록 짜자.
+                */
+                if(ptr_word_slice[0] == '/'){
+                    switch(ptr_word_slice[1]){
+                    case 's':
+                        if(game_status == 0){
+                            game_status = 1;
+                            start_game(cli, buff_out);
+                        } else {
+                            sprintf(buff_out, "The game has already begun.\n");
+                            send_to_self_message(buff_out, cli->uid);
+                        }
+                        break;
+                    case 'v': // 과반수 이상이 찬성해야 종료하게 만들고 싶은데
+                        if(game_status == 1){
+                            /*
+                            코드가 조잡해보이는데 괜찮은가...
+                            */
+                            char ox[2] = "\0";
+                            ox[0] = ptr_word_slice[3];
+                            if(strcmp(ox, "\0\0") != 0){
+                                strcat(vote, ox);// ox 선택도 둬야하는구나
+                                sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n", vote);
+                                send_to_all_message(buff_out);
+                                vote_count++;
+                                printf("v: %d  cli: %d", vote_count, cli_count);
+                                // 
+                                while(vote_count != cli_count){ // 시간이 지나면 취소
+                                /*
+                                liar_game.md To - Do List 2번 내용 참고
+                                */
+                                }
+                                sprintf(buff_out,"The game is finished. The word is %s\n", word); 
+                                printf("%s", buff_out);
+                                send_to_self_message(buff_out, cli->uid);
+                                game_status = 0;
+                            } else {
+                                sprintf(buff_out, "You missed O or X\n");
+                                send_to_self_message(buff_out, cli->uid);
+                            }
+                        } else {
+                            sprintf(buff_out, "The game hasn't started yet.\n");
+                            send_to_self_message(buff_out, cli->uid);
+                        }
+                        break;
+                    case 'h':
+                        sprintf(buff_out, "/s : game start\n> /v [O or X]: vote start\n> /h : help\n");
+                        send_to_self_message(buff_out, cli->uid);
+                        break;
+                    }
                 } else {
                     send_message(buff_out, cli->uid);
 
