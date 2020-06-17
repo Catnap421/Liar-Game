@@ -21,9 +21,12 @@ static char* word;
 static char* liar_name; 
 static int liar_uid;
 static int game_status = 0; // 1이면 게임 중으로 다시 게임을 시작할 수 없다.
-static int vote_count = 0;
+static int vote_count = 0; // 현재까지 투표를 진행한 사람
+static int pros = 0; // 찬성
+
 static char vote[MAX_CLIENTS] = "\0";
-static char refresh[MAX_CLIENTS] = "\0";
+static char vote_setting[MAX_CLIENTS] = "\0";
+static int timer = 60;
 
 /* Client structure */
 typedef struct{
@@ -103,6 +106,12 @@ void print_client_addr(struct sockaddr_in addr){
         (addr.sin_addr.s_addr & 0xff000000) >> 24);
 }
 
+void initialize_vote_setting(){
+    vote_count = 0;
+    pros = 0;
+    timer = 60;
+    strcpy(vote, vote_setting);
+}
 /* Add clients to queue */
 void queue_add(client_t *cl){
 	pthread_mutex_lock(&clients_mutex);
@@ -185,8 +194,7 @@ void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아
     //char buff_out[BUFFER_SZ];
 
     sprintf(buff_out, "\n\n>>>> Liar Game Start!! <<<\n");
-    vote_count = 0;
-    strcpy(vote, refresh);
+    initialize_vote_setting();
     printf("%s", buff_out);
     send_to_all_message(buff_out);
 
@@ -264,40 +272,77 @@ void *handle_client(void *arg){
                             send_to_self_message(buff_out, cli->uid);
                         }
                         break;
-                    case 'v': // 과반수 이상이 찬성해야 종료하게 만들고 싶은데
+                    /*
+                        코드가 조잡해보이는데 괜찮은가...
+                        과반수 이상이 찬성해야 투표하게 만들고 싶은데
+                    */
+                    case 'v':
                         if(game_status == 1){
-                            /*
-                            코드가 조잡해보이는데 괜찮은가...
-                            */
+                            if(ptr_word_slice[3] != 'o' && ptr_word_slice[3] != 'x'){
+                                sprintf(buff_out, "You must enter o or x\n");
+                                send_to_self_message(buff_out, cli->uid);
+                                break;
+                            }
                             char ox[2] = "\0";
                             ox[0] = ptr_word_slice[3];
-                            if(strcmp(ox, "\0\0") != 0){
-                                strcat(vote, ox);// ox 선택도 둬야하는구나
-                                sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n", vote);
+                            
+                            if(strcmp(ox, "o") == 0) pros++;
+                            strcat(vote, ox);// ox 선택도 둬야하는구나
+                            ++vote_count;
+                            if(cli_count == vote_count) sprintf(buff_out, "The vote is finished.\n");
+                            else sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d\n", vote, cli_count - vote_count);
+                            send_to_all_message(buff_out);
+                            printf("%s\n", buff_out);
+                            sleep(1);
+                                
+                            while(vote_count != cli_count && timer > 0){ // 시간이 지나면 취소
+                                sleep(5);
+                                timer -= 5;
+                                int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
+                                // sprintf(buff_out, "Waiting until the vote is over...\n> [Voting Status: %s]\n> Time Remaining : %dsec\n", vote, timer);
+                                // send_to_all_message(buff_out);
+        
+                            }
+                            if(vote_count != cli_count || pros < vote_count / 2){
+                                sprintf(buff_out, "The vote is cancelled.\n");
                                 send_to_all_message(buff_out);
-                                vote_count++;
-                                printf("v: %d  cli: %d", vote_count, cli_count);
-                                // 
-                                while(vote_count != cli_count){ // 시간이 지나면 취소
-                                /*
-                                liar_game.md To - Do List 2번 내용 참고
-                                */
+                                printf("%s\n", buff_out);
+                                initialize_vote_setting();
+                                break;
+                            } else {
+                                sprintf(buff_out,"Who is the liar?");
+                                for(int i = 0; i < MAX_CLIENTS; i++){
+                                    if(clients[i]){
+                                        strcat(buff_out, "\n>>>> ");
+                                        strcat(buff_out, clients[i]->name);
+                                    }
                                 }
-                                sprintf(buff_out,"The game is finished. The word is %s\n", word); 
-                                printf("%s", buff_out);
+                                strcat(buff_out,"\n");
+                                send_to_self_message(buff_out, cli->uid); 
+                                
+                                /*
+                                    엄청 비효율적, 각각의 스레드가 자신에게 보내도록 해야하기 때문이다 
+                                    poll의 경우 하나의 메인쓰레드에서 관리하면 좋을텐데
+                                */
+                                int receive = recv(cli->sockfd, buff_out,BUFFER_SZ, 0);
+                                if(receive > 0){
+
+                                }
+                                /*
+                                    liar_game.md To - Do List 2번 내용 참고
+                                */
+
+                                sprintf(buff_out,"The game is finished. The word is %s. The liar is %s\n", word, liar_name); 
                                 send_to_self_message(buff_out, cli->uid);
                                 game_status = 0;
-                            } else {
-                                sprintf(buff_out, "You missed O or X\n");
-                                send_to_self_message(buff_out, cli->uid);
-                            }
+                            }   
                         } else {
                             sprintf(buff_out, "The game hasn't started yet.\n");
                             send_to_self_message(buff_out, cli->uid);
                         }
                         break;
                     case 'h':
-                        sprintf(buff_out, "/s : game start\n> /v [O or X]: vote start\n> /h : help\n");
+                        sprintf(buff_out, "/s : game start\n> /v [o or x]: vote start\n> /h : help\n> exit\n");
                         send_to_self_message(buff_out, cli->uid);
                         break;
                     }
