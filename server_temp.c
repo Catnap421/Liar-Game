@@ -173,11 +173,18 @@ void send_to_all_message(char * s){
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void send_to_self_message(char *s, int sockfd){
+void send_to_self_message(char *s, int uid){
 	pthread_mutex_lock(&clients_mutex);
 
-	if(write(sockfd, s, strlen(s)) < 0){
-		perror("ERROR: write to descriptor failed");
+	for(int i=0; i<MAX_CLIENTS; ++i){
+		if(clients[i]){
+			if(clients[i]->uid == uid){
+				if(write(clients[i]->sockfd, s, strlen(s)) < 0){
+					perror("ERROR: write to descriptor failed");
+					break;
+				}
+			}
+		}
 	}
 
 	pthread_mutex_unlock(&clients_mutex);
@@ -262,7 +269,7 @@ void *handle_client(void *arg){
                             start_game(cli, buff_out);
                         } else {
                             sprintf(buff_out, "The game has already begun.\n");
-                            send_to_self_message(buff_out, cli->sockfd);
+                            send_to_self_message(buff_out, cli->uid);
                         }
                         break;
                     /*
@@ -271,76 +278,90 @@ void *handle_client(void *arg){
                     */
                     case 'v':
                         if(game_status == 1){
-                            if(ptr_word_slice[3] != 'o' && ptr_word_slice[3] != 'x'){
-                                sprintf(buff_out, "You must enter o or x\n");
-                                send_to_self_message(buff_out, cli->sockfd);
-                                break;
-                            }
-                            char ox[2] = "\0";
-                            ox[0] = ptr_word_slice[3];
                             
-                            if(strcmp(ox, "o") == 0) pros++;
-                            strcat(vote, ox);// ox 선택도 둬야하는구나
-                            ++vote_count;
-                            if(cli_count == vote_count) sprintf(buff_out, "The vote is finished.\n");
-                            else sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d\n", vote, cli_count - vote_count);
+                            sprintf(buff_out, "The finish vote is in progress.\n");
                             send_to_all_message(buff_out);
-                            printf("%s\n", buff_out);
                             sleep(1);
+                            sprintf(buff_out, "/v");
+                            send_to_all_message(buff_out);
+                            
+                            // if(ptr_word_slice[3] != 'o' && ptr_word_slice[3] != 'x'){
+                            //     sprintf(buff_out, "You must enter o or x\n");
+                            //     send_to_self_message(buff_out, cli->uid);
+                            //     break;
+                            // }
+                            // char ox[2] = "\0";
+                            // ox[0] = ptr_word_slice[3];
+                            
+                            // if(strcmp(ox, "o") == 0) pros++;
+                            // strcat(vote, ox);// ox 선택도 둬야하는구나
+                            // ++vote_count;
+                            // if(cli_count == vote_count) sprintf(buff_out, "The finish vote is done.\n");
+                            // else sprintf(buff_out, "The finish vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d people\n", vote, cli_count - vote_count);
+                            // send_to_all_message(buff_out);
+                            // printf("%s\n", buff_out);
+                            // sleep(1);
                                 
-                            while(vote_count != cli_count && timer > 0){ // 시간이 지나면 취소
-                                sleep(5);
-                                timer -= 5;
-                                //int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
-                                // sprintf(buff_out, "Waiting until the vote is over...\n> [Voting Status: %s]\n> Time Remaining : %dsec\n", vote, timer);
-                                // send_to_all_message(buff_out);
+                            // while(vote_count != cli_count && timer > 0){ // 시간이 지나면 취소
+                            //     sleep(5);
+                            //     timer -= 5;
+                            //     int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0); // 이 방법말고 개인 사용자단에서 처리를 할까??
+                            //     // sprintf(buff_out, "Waiting until the vote is over...\n> [Voting Status: %s]\n> Time Remaining : %dsec\n", vote, timer);
+                            //     // send_to_all_message(buff_out);
         
-                            }
-                            if(vote_count != cli_count || pros < vote_count / 2){
-                                sprintf(buff_out, "The vote is cancelled.\n");
-                                send_to_all_message(buff_out);
-                                printf("%s\n", buff_out);
-                                initialize_vote_setting();
-                                break;
-                            } else {
-                                if(cli->uid != liar_uid){
-                                    sprintf(buff_out,"Who is the liar?\n");
-                                    for(int i = 0; i < MAX_CLIENTS; i++){
-                                        if(clients[i]){
-                                            strcat(buff_out, ">>>> ");
-                                            strcat(buff_out, clients[i]->name);
-                                            strcat(buff_out,"\n");
-                                        }
-                                    } 
-                                }
-                                else {
-                                    sprintf(buff_out, "What is the word?\n");
-                                }
-                                    
-                                send_to_self_message(buff_out, cli->sockfd); 
-                                
-                                int receive = recv(cli->sockfd, buff_out,BUFFER_SZ, 0);
-                                if(receive > 0){
-                                    
-                                }
-                                /*
-                                    liar_game.md To - Do List 2번 내용 참고
-                                */
-
-                                sprintf(buff_out,"The game is finished. The word is %s. The liar is %s\n", word, liar_name); 
-                                send_to_self_message(buff_out, cli->sockfd);
-                                game_status = 0;
-                            }   
+                            // }
+                            
                         } else {
                             sprintf(buff_out, "The game hasn't started yet.\n");
-                            send_to_self_message(buff_out, cli->sockfd);
+                            send_to_self_message(buff_out, cli->uid);
                         }
                         break;
                     case 'h':
-                        sprintf(buff_out, "/s : game start\n> /v [o or x]: vote start\n> /h : help\n> exit\n");
-                        send_to_self_message(buff_out, cli->sockfd);
+                        sprintf(buff_out, "/s : game start\n> /v : start the finish vote\n> /h : help\n> exit\n");
+                        send_to_self_message(buff_out, cli->uid);
                         break;
                     }
+                }else if(ptr_word_slice[0] == '!'){
+                    vote_count++;
+                    if(ptr_word_slice[1] == 'o') pros++;
+                    if(cli_count == vote_count) sprintf(buff_out, "The finish vote is done.\n");
+                    else sprintf(buff_out, "The finish vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d people\n", vote, cli_count - vote_count);
+                    send_to_all_message(buff_out);
+                    if(vote_count != cli_count || pros < vote_count / 2){
+                        sprintf(buff_out, "The finish vote is cancelled.\n");
+                        send_to_all_message(buff_out);
+                        printf("%s\n", buff_out);
+                        initialize_vote_setting();
+
+                    } 
+                    //else {
+                    //     sprintf(buff_out,"Who is the liar?");
+                    //     for(int i = 0; i < MAX_CLIENTS; i++){
+                    //         if(clients[i]){
+                    //             strcat(buff_out, "\n>>>> ");
+                    //             strcat(buff_out, clients[i]->name);
+                    //         }
+                    //     }
+                    //     strcat(buff_out,"\n");
+                    //     send_to_self_message(buff_out, cli->uid); 
+                        
+                    //     /*
+                    //         엄청 비효율적, 각각의 스레드가 자신에게 보내도록 해야하기 때문이다 
+                    //         poll의 경우 하나의 메인쓰레드에서 관리하면 좋을텐데
+                    //     */
+                    //     int receive = recv(cli->sockfd, buff_out,BUFFER_SZ, 0);
+                    //     if(receive > 0){
+                                    
+                    //     }
+                    //     /*
+                    //         liar_game.md To - Do List 2번 내용 참고
+                    //     */
+
+                    //     sprintf(buff_out,"The game is finished. The word is %s. The liar is %s\n", word, liar_name); 
+                    //     send_to_self_message(buff_out, cli->uid);
+                    //     game_status = 0;
+                    // }   
+                    
                 } else {
                     send_message(buff_out, cli->uid);
 
