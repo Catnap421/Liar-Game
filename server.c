@@ -28,6 +28,7 @@ static int vote_status = 0;
 static int vote_count = 0; // 현재까지 투표를 진행한 사람
 static int pros = 0; // 찬성
 static char vote[MAX_CLIENTS] = "\0";
+static int vote_clients[MAX_CLIENTS] = { 0 };
 static char vote_setting[MAX_CLIENTS] = "\0";
 static int timer = 60;
 
@@ -193,12 +194,13 @@ void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네
         initialize_vote_setting();
         vote_count = 0;
         vote_status = 0;
+        bzero(vote_clients, MAX_CLIENTS);
     } else { // 과반수 이상이면!
         if(cli->uid != liar_uid){
             sprintf(buff_out,"Who is the liar?\n");
             for(int i = 0; i < MAX_CLIENTS; i++){
                 if(clients[i]){
-                    strcat(buff_out, ">>>> ");
+                    strcat(buff_out, "> ▶ ");
                     strcat(buff_out, clients[i]->name);
                     strcat(buff_out,"\n");
                 }
@@ -258,13 +260,14 @@ void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네
         sleep(1);
         
 
-        sprintf(buff_out,"The game is finished. The word is %s. The liar is %s\n", word, liar_name);
+        sprintf(buff_out,"The game is finished. The word is \"%s\". The liar is \"%s\".\n", word, liar_name);
         printf("%s", buff_out);
         send_to_self_message(buff_out, cli->sockfd); 
         game_status = 0;
         initialize_vote_setting();
         vote_status = 0;
         vote_count = 0;
+        bzero(vote_clients, MAX_CLIENTS);
     }
 }
 
@@ -359,18 +362,25 @@ void *handle_client(void *arg){
                                 send_to_self_message(buff_out, cli->sockfd);
                                 break;
                             }
-                            vote_status = 1;
+                            int vote_double = 0;
+                            for(int idx = 0 ; idx < vote_count; idx++) if(vote_clients[idx] == cli->uid) vote_double = 1;
+                            if(vote_double) break;
+
+    
                             char ox[2] = "\0";
                             ox[0] = ptr_word_slice[3];
                             
                             if(ptr_word_slice[3] == 'o') pros++;
                             strcat(vote, ox);
+
+                            vote_status = 1;
+                            vote_clients[vote_count] = cli->uid;
                             ++vote_count;
 
                             if(cli_count == vote_count) 
-                                sprintf(buff_out, "The vote is finished.\n");
+                                sprintf(buff_out, "The vote is finished.\n\n");
                             else 
-                                sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d\n", vote, cli_count - vote_count);
+                                sprintf(buff_out, "\n> The vote is in progress. >>> [Voting Status: %s] <<< The number of last: %d\n\n", vote, cli_count - vote_count);
                             send_to_all_message(buff_out);
                             printf("%s\n", buff_out);
 
