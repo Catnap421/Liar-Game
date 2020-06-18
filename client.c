@@ -61,16 +61,23 @@ void send_msg_handler() {
 
 void recv_msg_handler() {
 	char message[LENGTH] = {};
+    char buffer[LENGTH + 32] = {};
     while (1) {
 		int receive = recv(sockfd, message, LENGTH, 0);
         if (receive > 0) {
-            printf("%s", message);
-            str_overwrite_stdout();
+            if(message[0] == '!'){
+                sprintf(buffer, "%s: %s\n", name, message); // 이 형태로 고정되서 나오는데 
+                send(sockfd, buffer, strlen(buffer), 0);
+            } else {
+                printf("%s", message);
+                str_overwrite_stdout();
+            }
         } else if (receive == 0) {
 			break;
         } else {
 			// -1
 		}
+        bzero(buffer, LENGTH + 32);
 		memset(message, 0, sizeof(message));
     }
 }

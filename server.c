@@ -20,10 +20,13 @@ static int uid = 10;
 static char* word;
 static char* liar_name; 
 static int liar_uid;
+static int liar_win = 0;
+
 static int game_status = 0; // 1이면 게임 중으로 다시 게임을 시작할 수 없다.
+
+static int vote_status = 0;
 static int vote_count = 0; // 현재까지 투표를 진행한 사람
 static int pros = 0; // 찬성
-
 static char vote[MAX_CLIENTS] = "\0";
 static char vote_setting[MAX_CLIENTS] = "\0";
 static int timer = 60;
@@ -107,7 +110,6 @@ void print_client_addr(struct sockaddr_in addr){
 }
 
 void initialize_vote_setting(){
-    vote_count = 0;
     pros = 0;
     timer = 60;
     strcpy(vote, vote_setting);
@@ -183,6 +185,89 @@ void send_to_self_message(char *s, int sockfd){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
+void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네;; 그냥 안에서 다시 선언할까?
+    char buff_out[BUFFER_SZ];
+    if(pros < cli_count / 2){ 
+        sprintf(buff_out, "The vote is cancelled.\n");
+        printf("%s\n", buff_out);    
+        initialize_vote_setting();
+        vote_count = 0;
+        vote_status = 0;
+    } else { // 과반수 이상이면!
+        if(cli->uid != liar_uid){
+            sprintf(buff_out,"Who is the liar?\n");
+            for(int i = 0; i < MAX_CLIENTS; i++){
+                if(clients[i]){
+                    strcat(buff_out, ">>>> ");
+                    strcat(buff_out, clients[i]->name);
+                    strcat(buff_out,"\n");
+                }
+            } 
+        }else {
+            sprintf(buff_out, "What is the word?\n");
+        }
+    }
+                                     
+    send_to_self_message(buff_out, cli->sockfd); 
+    bzero(buff_out, BUFFER_SZ);
+
+    if(vote_status == 1){                     
+        int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0); // 이걸 건너뛰는 방법이 존재해야한다.
+        if(receive > 0){
+            if(strlen(buff_out) > 0){
+                vote_count--;
+                printf("buff_out: %s", buff_out); // 지울 예정
+                char * word_slice = malloc(sizeof(char) * BUFFER_SZ);
+                strcpy(word_slice, buff_out);
+
+                char* ptr_word_slice = strtok(word_slice, ":");
+                ptr_word_slice = strtok(NULL, ":");
+                
+                ptr_word_slice = trim(ptr_word_slice, NULL); 
+
+                if(cli->uid == liar_uid){ // if client is liar
+                    if(strcmp(word, ptr_word_slice) == 0){ 
+                        liar_win = 1;
+                        sprintf(buff_out, "Yeaaaah!! You're Right!!\n");
+                        send_to_self_message(buff_out, cli->sockfd);
+                    } else {
+                        printf("단어는 알맞나? %s!\n", word); // 지울예정
+                        sprintf(buff_out, "Oops!! You're Wrong!!\n");
+                        send_to_self_message(buff_out, cli->sockfd);
+                    }
+                } else {
+                    if(strcmp(liar_name, ptr_word_slice) == 0){
+                        sprintf(buff_out, "Yeaaaah!! You're Right!!\n"); 
+                        send_to_self_message(buff_out, cli->sockfd);
+                    } else {
+                        printf("라이어는 알맞나? %s!\n", liar_name); // 지울예정
+                        printf("정확도: %d\n", strcmp(liar_name, ptr_word_slice)); // 지울예정
+                        sprintf(buff_out, "Oops!! You're Wrong!!\n");
+                        send_to_self_message(buff_out, cli->sockfd);
+                    }
+                }
+                while(vote_count != 0){sleep(1);}
+                if(liar_win == 1){
+                    sleep(1);
+                    sprintf(buff_out, "Liar %s Win!!\n", liar_name);
+                    printf("%s", buff_out);
+                    send_to_self_message(buff_out, cli->sockfd);
+                }      
+            }                      
+        }
+        sleep(1);
+        
+
+        sprintf(buff_out,"The game is finished. The word is %s. The liar is %s\n", word, liar_name);
+        printf("%s", buff_out);
+        send_to_self_message(buff_out, cli->sockfd); 
+        game_status = 0;
+        initialize_vote_setting();
+        vote_status = 0;
+        vote_count = 0;
+    }
+}
+
 void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아야 하는가?
     //char buff_out[BUFFER_SZ];
 
@@ -200,17 +285,15 @@ void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아
     liar_name = cli_liar->name;
     liar_uid = cli_liar->uid;
 
-    word = "banana"; // 원래는 파일에서 읽어올 예정
+    word = "banana";
+
+     // 원래는 파일에서 읽어올 예정
 
     sprintf(buff_out, ">>> The word is %s <<<\n", word);
-    printf("%s", buff_out);
+    printf("%s\n", buff_out);
     printf("uid: %d, liar_uid: %d, liar_name: %s\n",cli->uid, liar_uid, liar_name);
     
     send_message(buff_out, liar_uid);
-
-
-    // name이라는 전역변수를 만들긴 했는데, 서로 다른 쓰레드인데 접근 가능한 지 의문
-    
 }
 
 /* Handle all communication with the client */
@@ -265,10 +348,6 @@ void *handle_client(void *arg){
                             send_to_self_message(buff_out, cli->sockfd);
                         }
                         break;
-                    /*
-                        코드가 조잡해보이는데 괜찮은가...
-                        과반수 이상이 찬성해야 투표하게 만들고 싶은데
-                    */
                     case 'v':
                         if(game_status == 1){
                             if(ptr_word_slice[3] != 'o' && ptr_word_slice[3] != 'x'){
@@ -276,60 +355,27 @@ void *handle_client(void *arg){
                                 send_to_self_message(buff_out, cli->sockfd);
                                 break;
                             }
+                            vote_status = 1;
                             char ox[2] = "\0";
                             ox[0] = ptr_word_slice[3];
                             
-                            if(strcmp(ox, "o") == 0) pros++;
-                            strcat(vote, ox);// ox 선택도 둬야하는구나
+                            if(ptr_word_slice[3] == 'o') pros++;
+                            strcat(vote, ox);
                             ++vote_count;
-                            if(cli_count == vote_count) sprintf(buff_out, "The vote is finished.\n");
-                            else sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d\n", vote, cli_count - vote_count);
+
+                            if(cli_count == vote_count) 
+                                sprintf(buff_out, "The vote is finished.\n");
+                            else 
+                                sprintf(buff_out, "The vote is in progress.\n> [Voting Status: %s]\n> The number of last: %d\n", vote, cli_count - vote_count);
                             send_to_all_message(buff_out);
                             printf("%s\n", buff_out);
+
                             sleep(1);
                                 
-                            while(vote_count != cli_count && timer > 0){ // 시간이 지나면 취소
-                                sleep(5);
-                                timer -= 5;
-                                //int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0);
-                                // sprintf(buff_out, "Waiting until the vote is over...\n> [Voting Status: %s]\n> Time Remaining : %dsec\n", vote, timer);
-                                // send_to_all_message(buff_out);
-        
-                            }
-                            if(vote_count != cli_count || pros < vote_count / 2){
-                                sprintf(buff_out, "The vote is cancelled.\n");
+                            if(vote_count == cli_count){
+                                bzero(buff_out, BUFFER_SZ);
+                                sprintf(buff_out, "!"); // 이걸 그대로 모두가 다시 보내도록!! -> 352번째 줄에서 처리!!
                                 send_to_all_message(buff_out);
-                                printf("%s\n", buff_out);
-                                initialize_vote_setting();
-                                break;
-                            } else {
-                                if(cli->uid != liar_uid){
-                                    sprintf(buff_out,"Who is the liar?\n");
-                                    for(int i = 0; i < MAX_CLIENTS; i++){
-                                        if(clients[i]){
-                                            strcat(buff_out, ">>>> ");
-                                            strcat(buff_out, clients[i]->name);
-                                            strcat(buff_out,"\n");
-                                        }
-                                    } 
-                                }
-                                else {
-                                    sprintf(buff_out, "What is the word?\n");
-                                }
-                                    
-                                send_to_self_message(buff_out, cli->sockfd); 
-                                
-                                int receive = recv(cli->sockfd, buff_out,BUFFER_SZ, 0);
-                                if(receive > 0){
-                                    
-                                }
-                                /*
-                                    liar_game.md To - Do List 2번 내용 참고
-                                */
-
-                                sprintf(buff_out,"The game is finished. The word is %s. The liar is %s\n", word, liar_name); 
-                                send_to_self_message(buff_out, cli->sockfd);
-                                game_status = 0;
                             }   
                         } else {
                             sprintf(buff_out, "The game hasn't started yet.\n");
@@ -341,6 +387,9 @@ void *handle_client(void *arg){
                         send_to_self_message(buff_out, cli->sockfd);
                         break;
                     }
+                } else if(ptr_word_slice[0] == '!'){
+                    printf("라이어를 찾아라!!\n");
+                    find_liar(cli);
                 } else {
                     send_message(buff_out, cli->uid);
 
