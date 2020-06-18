@@ -288,12 +288,16 @@ void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아
     word = "banana";
 
      // 원래는 파일에서 읽어올 예정
-
+    
     sprintf(buff_out, ">>> The word is %s <<<\n", word);
     printf("%s\n", buff_out);
-    printf("uid: %d, liar_uid: %d, liar_name: %s\n",cli->uid, liar_uid, liar_name);
-    
+    printf("%s is Liar.\n", liar_name);
     send_message(buff_out, liar_uid);
+
+    bzero(buff_out, BUFFER_SZ);
+
+    sprintf(buff_out, ">>> You're Liar!! <<<\n");
+    send_to_self_message(buff_out, cli_liar->sockfd);
 }
 
 /* Handle all communication with the client */
