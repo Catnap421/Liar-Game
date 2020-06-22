@@ -281,8 +281,21 @@ void start_game(client_t * cli, char* buff_out){
 
     liar_name = cli_liar->name;
     liar_uid = cli_liar->uid;
-
-    word = "banana";
+    
+    int line_count = 0;
+    FILE *p_file = fopen("words.txt", "rt");
+    char buffer[BUFFER_SZ];
+    if(p_file != NULL){
+        line_count++;
+        while(fgets(buffer, BUFFER_SZ, p_file) != NULL){
+            if(line_count == rand() % 9 + 1){
+                buffer[strlen(buffer) - 1] = '\0';
+                word = buffer;
+                break;
+            }
+        }
+        fclose(p_file);
+    }
 
     
     sprintf(buff_out, ">>> The word is \"%s\" <<<\n", word);
