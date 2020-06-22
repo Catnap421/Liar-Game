@@ -22,11 +22,11 @@ static char* liar_name;
 static int liar_uid;
 static int liar_win = 0;
 
-static int game_status = 0; // 1이면 게임 중으로 다시 게임을 시작할 수 없다.
+static int game_status = 0; 
 
 static int vote_status = 0;
-static int vote_count = 0; // 현재까지 투표를 진행한 사람
-static int pros = 0; // 찬성
+static int vote_count = 0; 
+static int pros = 0; 
 static char vote[MAX_CLIENTS] = "\0";
 static int vote_clients[MAX_CLIENTS] = { 0 };
 static char vote_setting[MAX_CLIENTS] = "\0";
@@ -186,7 +186,7 @@ void send_to_self_message(char *s, int sockfd){
 	pthread_mutex_unlock(&clients_mutex);
 }
 
-void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네;; 그냥 안에서 다시 선언할까?
+void find_liar(client_t * cli){ 
     char buff_out[BUFFER_SZ];
     if(pros < cli_count / 2){ 
         sprintf(buff_out, "The vote is cancelled.\n");
@@ -214,11 +214,10 @@ void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네
     bzero(buff_out, BUFFER_SZ);
 
     if(vote_status == 1){                     
-        int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0); // 이걸 건너뛰는 방법이 존재해야한다.
+        int receive = recv(cli->sockfd, buff_out, BUFFER_SZ, 0); 
         if(receive > 0){
             if(strlen(buff_out) > 0){
                 vote_count--;
-                printf("buff_out: %s", buff_out); // 지울 예정
                 char * word_slice = malloc(sizeof(char) * BUFFER_SZ);
                 strcpy(word_slice, buff_out);
 
@@ -233,7 +232,6 @@ void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네
                         sprintf(buff_out, "Yeaaaah!! You're Right!!\n");
                         send_to_self_message(buff_out, cli->sockfd);
                     } else {
-                        printf("단어는 알맞나? %s!\n", word); // 지울예정
                         sprintf(buff_out, "Oops!! You're Wrong!!\n");
                         send_to_self_message(buff_out, cli->sockfd);
                     }
@@ -242,8 +240,6 @@ void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네
                         sprintf(buff_out, "Yeaaaah!! You're Right!!\n"); 
                         send_to_self_message(buff_out, cli->sockfd);
                     } else {
-                        printf("라이어는 알맞나? %s!\n", liar_name); // 지울예정
-                        printf("정확도: %d\n", strcmp(liar_name, ptr_word_slice)); // 지울예정
                         sprintf(buff_out, "Oops!! You're Wrong!!\n");
                         send_to_self_message(buff_out, cli->sockfd);
                     }
@@ -271,9 +267,7 @@ void find_liar(client_t * cli){ // 여기서 정해진 buff_out은 안 쓰이네
     }
 }
 
-void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아야 하는가?
-    //char buff_out[BUFFER_SZ];
-
+void start_game(client_t * cli, char* buff_out){ 
     sprintf(buff_out, "\n\n>>>> Liar Game Start!! <<<\n");
     initialize_vote_setting();
     printf("%s", buff_out);
@@ -290,9 +284,8 @@ void start_game(client_t * cli, char* buff_out){ // buff_out을 인자로 받아
 
     word = "banana";
 
-     // 원래는 파일에서 읽어올 예정
     
-    sprintf(buff_out, ">>> The word is %s <<<\n", word);
+    sprintf(buff_out, ">>> The word is \"%s\" <<<\n", word);
     printf("%s\n", buff_out);
     printf("%s is Liar.\n", liar_name);
     send_message(buff_out, liar_uid);
@@ -340,10 +333,8 @@ void *handle_client(void *arg){
                 char* ptr_word_slice = strtok(word_slice, ":");
                 ptr_word_slice = strtok(NULL, ":");
 
-                trim(ptr_word_slice, NULL); // trim 처리 중요
-                /*
-                현재의 방식보단 '/'키워드를 만들어서 게임을 시작하고 게임을 끝내고 liar, word를 파악할 수 있도록 짜자.
-                */
+                trim(ptr_word_slice, NULL); 
+
                 if(ptr_word_slice[0] == '/'){
                     switch(ptr_word_slice[1]){
                     case 's':
@@ -388,7 +379,7 @@ void *handle_client(void *arg){
                                 
                             if(vote_count == cli_count){
                                 bzero(buff_out, BUFFER_SZ);
-                                sprintf(buff_out, "!"); // 이걸 그대로 모두가 다시 보내도록!! -> 352번째 줄에서 처리!!
+                                sprintf(buff_out, "!"); // find_liar 호출을 위한 
                                 send_to_all_message(buff_out);
                             }   
                         } else {
@@ -397,12 +388,11 @@ void *handle_client(void *arg){
                         }
                         break;
                     case 'h':
-                        sprintf(buff_out, "/s : game start\n> /v [o or x]: vote start\n> /h : help\n> exit\n");
+                        sprintf(buff_out, "/s : game start\n> /v [o or x]: vote start\n> /h : help\n> /exit : exit\n");
                         send_to_self_message(buff_out, cli->sockfd);
                         break;
                     }
                 } else if(ptr_word_slice[0] == '!'){
-                    printf("라이어를 찾아라!!\n");
                     find_liar(cli);
                 } else {
                     send_message(buff_out, cli->uid);
@@ -475,7 +465,7 @@ int main(int argc, char **argv){
         return EXIT_FAILURE;
 	}
 
-	printf("=== WELCOME TO THE CHATROOM ===\n");
+	printf("=== WELCOME TO THE LIAR GAME ROOM ===\n");
 
 	while(1){
 		socklen_t clilen = sizeof(cli_addr);

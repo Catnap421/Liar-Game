@@ -46,10 +46,10 @@ void send_msg_handler() {
         fgets(message, LENGTH, stdin);
         str_trim_lf(message, LENGTH);
 
-        if (strcmp(message, "exit") == 0) {
+        if (strcmp(message, "/exit") == 0) {
                 break;
         } else {
-            sprintf(buffer, "%s: %s\n", name, message); // 이 형태로 고정되서 나오는데 
+            sprintf(buffer, "%s: %s\n", name, message); 
             send(sockfd, buffer, strlen(buffer), 0);
         }
 
@@ -66,7 +66,7 @@ void recv_msg_handler() {
 		int receive = recv(sockfd, message, LENGTH, 0);
         if (receive > 0) {
             if(message[0] == '!'){
-                sprintf(buffer, "%s: %s\n", name, message); // 이 형태로 고정되서 나오는데 
+                sprintf(buffer, "%s: %s\n", name, message); 
                 send(sockfd, buffer, strlen(buffer), 0);
             } else {
                 printf("%s", message);
@@ -122,7 +122,7 @@ int main(int argc, char **argv){
 	// Send name
 	send(sockfd, name, 32, 0);
 
-	printf("=== WELCOME TO THE CHATROOM ===\n");
+	printf("=== WELCOME TO THE LIAR GAME ROOM ===\n");
 
 	pthread_t send_msg_thread;
     if(pthread_create(&send_msg_thread, NULL, (void *) send_msg_handler, NULL) != 0){
